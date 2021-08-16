@@ -1,0 +1,202 @@
+從零安裝Autoware.Auto+LGSVL
+
+1. Azure建虛擬機/網路打開4000埠
+	//虛擬機影像：Ubuntu Server 18.04 lts - gen2
+(標準 NC6s_v3 , 112GB Ram)
+
+2. linux vm 安裝桌面 (Mac/Terminal , Win/Putty)
+	$ ssh azureuser@vm.ip.address
+	$ sudo apt update
+	$ sudo apt install ubuntu-desktop
+
+3. 安裝遠端桌面(Nomachine)
+	//本機下載 NoMachine for Linux - x86_64（.gz版本），改名成no.gz
+	//下載 https://www.nomachine.com/download/download&id=2	
+	$ scp "no.gz" azureuser@52.247.195.6:no.gz
+	//雲
+	$  cd ~
+	$ sudo cp no.gz /usr
+	$ cd /usr
+	$ sudo tar zxvf no.gz
+	$ sudo /usr/NX/nxserver --install
+
+4. 安裝Docker
+	$ cd ~
+	$ sudo apt update
+
+	$ sudo apt install \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+	$ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+	//以下為單一指令
+	============
+	$ echo \
+  "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  	$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+	============
+	$ sudo apt update
+	$ sudo apt install docker-ce docker-ce-cli containerd.io 
+	$ sudo docker run hello-world
+
+	// run Docker as non-root user
+	$ sudo groupadd docker
+	$ sudo usermod -aG docker $USER
+	$ newgrp docker
+	$ docker run hello-world
+
+5. 安裝 nvidia driver
+	$ sudo add-apt-repository ppa:graphics-drivers/ppa
+	$ sudo apt update
+	$ sudo apt install ubuntu-drivers-common
+	$ ubuntu-drivers devices
+	$ sudo apt install nvidia-driver-470 
+	$ sudo reboot 
+
+6.   連線遠端桌面（Nomachine）
+	// 根據自己的電腦系統下載本地端 Nomachine並安裝
+	// https://www.nomachine.com/download
+	// 輸入遠端IP位址並連線
+	// 改變適合解析度
+
+7. 安裝nVidia工具（以下皆為遠端linux電腦）
+	$ curl https://get.docker.com | sh && sudo systemctl --now enable docker
+
+	//以下為同一行
+	$ distribution=$(. /etc/os-release;echo $ID$VERSION_ID) \
+   && curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add - \
+   && curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+	$ sudo apt update
+	$ sudo apt install -y nvidia-docker2
+	$ sudo systemctl restart docker
+	$ sudo docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+
+8. 安裝build工具
+	$ sudo apt update
+	$ sudo apt upgrade
+	$ sudo apt install build-essential
+
+9. 安裝ADE
+	$ cd ~
+	$ mkdir adehome
+	$ cd adehome
+	$ wget https://gitlab.com/ApexAI/ade-cli/uploads/f6c47dc34cffbe90ca197e00098bdd3f/ade+x86_64
+	$ mv ade+x86_64 ade
+	$ chmod +x ade
+	$ sudo mv ade /usr/local/bin
+	$ which ade
+	$ sudo ade update-cli
+	$ ade --version
+	$ cd ~/adehome
+	$ touch .adehome
+
+10. 安裝Autoware.auto
+	$ git clone --recurse-submodules https://gitlab.com/autowarefoundation/autoware.auto/AutowareAuto.git
+
+11. 新增ADE啟動檔 .aderc-nvidia
+	$ cd AutowareAuto
+	$ vim .aderc-nvidia //並儲存
+export ADE_DOCKER_RUN_ARGS="--cap-add=SYS_PTRACE --net=host --privileged --add-host ade:127.0.0.1 -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp --runtime=nvidia -ti --rm -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
+-e NVIDIA_VISIBLE_DEVICES=all \
+-e NVIDIA_DRIVER_CAPABILITIES=compute,utility,display"
+export ADE_GITLAB=gitlab.com
+export ADE_REGISTRY=registry.gitlab.com
+export ADE_DISABLE_NVIDIA_DOCKER=false
+export ADE_IMAGES="
+  registry.gitlab.com/autowarefoundation/autoware.auto/autowareauto/amd64/ade-foxy:master   registry.gitlab.com/autowarefoundation/autoware.auto/autowareauto/amd64/binary-foxy:master
+  registry.gitlab.com/autowarefoundation/autoware.auto/ade-lgsvl/foxy:2020.06
+  nvidia/cuda:11.0-base
+"
+
+12. 啟動 ADE
+	$ source .aderc-nvidia
+	$ ade start
+	$ ade enter
+
+13. ADE內編譯Autoware
+	ade$ cd AutowareAuto
+	ade$ vcs import < autoware.auto.$ROS_DISTRO.repos
+	ade$ colcon build
+	ade$ colcon test-result
+
+14. 安裝lgsvl_bridge, //開另一terminal
+	ade$ ade enter
+	//inside ade
+	ade$ source /opt/AutowareAuto/setup.bash
+	ade$ sudo apt update
+	ade$ sudo apt install ros-foxy-lgsvl-bridge
+	ade$ ros2 pkg list	//找到lgsvl_bridge
+	//跳到step 15
+
+14.1.  從原始碼安裝lgsvl_bridge
+	//在ADE之外
+	$ mkdir -p ~/adehome/AutowareAuto/src/external/
+	$ cd ~/adehome/AutowareAuto/src/external/
+	$ git clone https://github.com/lgsvl/ros2-lgsvl-bridge.git
+	//在ADE內
+	$ ade enter
+	//inside ade
+	$ cd ~/AutowareAuto/src/external/ros2-lgsvl-bridge
+	$ git checkout ${ROS_DISTRO}-devel
+	$ colcon build --packages-select lgsvl_bridge --cmake-args '-DCMAKE_BUILD_TYPE=Release'
+	$ source ~/AutowareAuto/src/external/ros2-lgsvl-bridge/install/setup.bash
+	$ ros2 pkg list //找到lgsvl_bridge
+	//之後運行要source
+	ade$  source ~/AutowareAuto/src/external/ros2-lgsvl-bridge/install/setup.bash
+
+15. 安裝LGSVL Messages, //開另一terminal 
+	//ADE之外
+	$ mkdir -p ~/adehome/AutowareAuto/src/external/
+	$ cd ~/adehome/AutowareAuto/src/external/
+	$ git clone https://github.com/lgsvl/lgsvl_msgs.git
+	$ ade enter
+	//inside ade
+	$ source /opt/AutowareAuto/setup.bash
+	$ cd ~/AutowareAuto
+	$ colcon build --packages-select lgsvl_msgs --cmake-args '-DCMAKE_BUILD_TYPE=Release'
+
+16. 下載解壓縮LGSVL並安裝火神程式庫
+	// https://www.svlsimulator.com/ 下載lgsvl並解壓到桌面
+	//在ADE之外
+	//安裝LGSVL相關程式庫 libvulkan1
+	//開新 terminal
+	$ sudo apt install libvulkan1
+
+17. 運行LGSVL
+	a.   進入LGSVL資料夾，雙擊 simulator 圖示 
+	b.   建一個新 cluster，名為 test 
+	c. 開一個simulator，並Publish
+		-  Select Cluster : test
+		-  Runtime template : Random Traffic
+ 		- map : BorregasAve
+		- Vehicle : Lexus2016RXHybrid
+		- Select Sesor Configuration : AutowareAuto
+		- Autopilot : Autoware.Auto
+		- Bridge Connection: localhost:9090(不用改)
+	d. Run Simulator
+	e. Play 
+
+18. 運行lgsvl_bridge, //開另一terminal，如果沒有此模組，參考步驟13重安裝
+	ade$ enter
+	//inside ade
+	ade$ source /opt/AutowareAuto/setup.bash
+	ade$ lgsvl_bridge	//可看到LGSVL開始抛送topic
+
+19. 運行rviz2， //開另一terminal
+	$  ade enter
+	//inside ade
+	ade$ source /opt/AutowareAuto/setup.bash
+	ade$ rviz2 -d /home/"${USER}"/AutowareAuto/install/autoware_auto_examples/share/autoware_auto_examples/rviz2/autoware.rviz
+
+20. 設定rviz2光達
+	Global Options / Fixed Frame 設為 lidar_front 
+	Transoformed Points / Topic 設為 /lidar_front/points_raw
+
+	//試著在LGSVL用游標操縱車子，可以看到光達的變化
+
+21. END
