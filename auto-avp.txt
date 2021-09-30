@@ -1,0 +1,17 @@
+開3個terminal
+各設定好環境：
+$ cd adehome/AutowareAuto
+$ source .aderc-nvidia
+$ ade enter
+$ source /opt/AutowareAuto/setup.bash （未編譯Autoware）
+$ source ~/AutowareAuto/install/setup.bash（有編譯）
+
+T1:
+ade$ /opt/lgsvl/simulator
+開瀏覽器 http://127.0.0.1:9090
+
+T2:
+ade$ ros2 launch autoware_auto_launch autoware_auto_visualization.launch.py
+
+T3:
+ade$ ros2 launch autoware_demos avp_sim.launch.py
